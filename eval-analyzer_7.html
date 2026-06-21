@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eval Trend Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a323d;
+    --ink:#e6edf3; --ink2:#9aa7b4; --ink3:#64707d;
+    --accent:#5ec6ff; --accent2:#ffd166; --danger:#ff6b6b; --ok:#5dd1a4;
+    --grid:rgba(255,255,255,0.06); --axis:#7f8c99; --fitline:#ffffff; --fitcase:rgba(0,0,0,0.55);
+    --bandpool:rgba(150,160,170,0.32);
+  }
+  [data-theme="light"]{
+    --bg:#f5f3ec; --panel:#ffffff; --panel2:#efece3; --line:#ddd8cb;
+    --ink:#1c1f24; --ink2:#5a6068; --ink3:#8a9099;
+    --accent:#1f6fb2; --accent2:#b5851a; --danger:#c0392b; --ok:#1d9e75;
+    --grid:rgba(0,0,0,0.07); --axis:#7a818a; --fitline:#11151a; --fitcase:rgba(255,255,255,0.7);
+    --bandpool:rgba(90,100,110,0.22);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+    line-height:1.5; -webkit-font-smoothing:antialiased; transition:background .25s,color .25s;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+  header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:26px}
+  h1{font-size:1.45rem;font-weight:600;letter-spacing:-.01em;font-family:Georgia,'Times New Roman',serif}
+  h1 .tick{color:var(--accent)}
+  .sub{color:var(--ink2);font-size:.82rem;margin-top:4px;max-width:60ch}
+  .themebtn{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer;font:inherit;font-size:.78rem;transition:.15s}
+  .themebtn:hover{border-color:var(--accent)}
+  h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:var(--ink2);font-weight:600;margin-bottom:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:20px}
+  .tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--ink2);border-radius:8px;padding:9px 16px;cursor:pointer;font:inherit;font-size:.8rem;transition:.15s}
+  .tab:hover{color:var(--ink)}
+  .tab.active{background:var(--panel2);color:var(--ink);border-color:var(--accent)}
+  label{font-size:.78rem;color:var(--ink2);display:block;margin-bottom:5px}
+  input,select,textarea,button{font:inherit}
+  input[type=text],input[type=number],select,textarea{
+    background:var(--bg);border:1px solid var(--line);color:var(--ink);
+    border-radius:7px;padding:8px 10px;font-size:.82rem;width:100%;transition:.15s
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+  textarea{resize:vertical;min-height:120px;line-height:1.6}
+  .btn{background:var(--accent);color:#04121d;border:none;border-radius:8px;padding:10px 18px;font-size:.82rem;font-weight:600;cursor:pointer;transition:.15s}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .btn.ghost:hover{border-color:var(--accent)}
+  .btn.sm{padding:6px 12px;font-size:.76rem}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .row>*{flex:1;min-width:120px}
+  .qrow{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-bottom:8px}
+  .qrow input{margin:0}
+  .miniico{background:transparent;border:1px solid var(--line);color:var(--ink2);border-radius:6px;width:32px;height:34px;cursor:pointer;font-size:1rem;transition:.15s}
+  .miniico:hover{border-color:var(--danger);color:var(--danger)}
+  .grid-input{overflow-x:auto}
+  table.entry{border-collapse:collapse;width:100%;font-size:.76rem}
+  table.entry th,table.entry td{border:1px solid var(--line);padding:4px}
+  table.entry th{background:var(--panel2);color:var(--ink2);font-weight:600;white-space:nowrap;padding:6px 8px}
+  table.entry input{border:none;background:transparent;padding:5px 6px;text-align:center;border-radius:0}
+  table.entry input:focus{box-shadow:none;background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .dropzone{border:1.5px dashed var(--line);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:.15s;color:var(--ink2)}
+  .dropzone:hover,.dropzone.over{border-color:var(--accent);color:var(--ink);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+  .dropzone strong{color:var(--ink);font-size:.95rem}
+  .hint{font-size:.74rem;color:var(--ink3);margin-top:8px}
+  .status{font-size:.78rem;padding:10px 12px;border-radius:8px;margin-top:12px}
+  .status.ok{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 35%,transparent)}
+  .status.err{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 35%,transparent)}
+  .status.work{background:var(--panel2);color:var(--ink2);border:1px solid var(--line)}
+  .review{max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:12px}
+  .review table{border-collapse:collapse;width:100%;font-size:.74rem}
+  .review th,.review td{border-bottom:1px solid var(--line);padding:6px 9px;text-align:left;white-space:nowrap}
+  .review th{position:sticky;top:0;background:var(--panel2);color:var(--ink2)}
+  .controls{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .controls .grp{display:flex;gap:7px;align-items:center}
+  .controls select{width:auto;min-width:150px}
+  .controls label.inline{display:flex;gap:6px;align-items:center;margin:0;color:var(--ink);font-size:.8rem;cursor:pointer}
+  .toggles{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
+  .ctog{font-size:.74rem;padding:4px 11px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;border-left-width:3px;transition:.15s}
+  .chartbox{position:relative;width:100%;height:460px}
+  .note{font-size:.72rem;color:var(--ink3);margin-top:12px;line-height:1.6}
+  .hidden{display:none}
+  a{color:var(--accent)}
+  .seedbtn{font-size:.74rem;color:var(--accent);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Eval Trend Analyzer<span class="tick"> ·</span></h1>
+      <p class="sub">Plot course-evaluation scores over time, fit trends with real ±1σ error bands, and export. Everything runs in your browser — nothing you enter or upload leaves this page.</p>
+    </div>
+    <button class="themebtn" id="themeBtn">◐ Light</button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="manual">Enter numbers</button>
+    <button class="tab" data-tab="csv">Paste CSV</button>
+    <button class="tab" data-tab="pdf">Upload CoursEval PDF</button>
+  </div>
+
+  <!-- MANUAL -->
+  <section class="card" id="tab-manual">
+    <h2>Questions</h2>
+    <div id="qlist"></div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn ghost sm" id="addQ" style="flex:0">+ Add question</button>
+      <span class="hint" style="flex:1;margin:0;align-self:center">Name each evaluation item. The grid below updates to match.</span>
+    </div>
+
+    <h2 style="margin-top:24px">Data</h2>
+    <p class="hint" style="margin-top:0;margin-bottom:10px">One row per term/section. Enter the <strong>mean</strong> for each question. Optionally enter <strong>N</strong> (responses) and, if you have them, the count or percent of responses at each level to get real error bars. Leave N blank and bands fall back to spread-only estimates.</p>
+    <div class="grid-input"><table class="entry" id="entryTable"></table></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost sm" id="addRow" style="flex:0">+ Add term</button>
+      <button class="seedbtn" id="seedBtn" style="flex:0;align-self:center">load example data</button>
+    </div>
+    <div style="margin-top:18px"><button class="btn" id="plotManual">Plot it</button></div>
+    <div id="manualStatus"></div>
+  </section>
+
+  <!-- CSV -->
+  <section class="card hidden" id="tab-csv">
+    <h2>Paste CSV</h2>
+    <p class="hint" style="margin-top:0">First column = term label. Then, per question: <code>mean</code> (and optionally <code>N</code>). Header row sets question names. Example:</p>
+    <textarea id="csvBox" spellcheck="false">term,Clarity_mean,Clarity_N,Engagement_mean,Engagement_N
+2023,4.3,20,4.6,20
+2024,4.5,18,4.7,18
+2025,4.6,22,4.4,22</textarea>
+    <div style="margin-top:14px"><button class="btn" id="plotCsv">Parse &amp; plot</button></div>
+    <div id="csvStatus"></div>
+  </section>
+
+  <!-- PDF -->
+  <section class="card hidden" id="tab-pdf">
+    <h2>Upload CoursEval PDF</h2>
+    <div class="dropzone" id="dropzone">
+      <strong>Drop a PDF here, or click to choose</strong>
+      <div class="hint">Auto-detects two CoursEval layouts: the multi-term aggregate report and the per-student individual-response export. Add several files to build a time series.</div>
+      <input type="file" id="fileInput" accept="application/pdf" multiple class="hidden">
+    </div>
+    <div id="pdfStatus"></div>
+    <div class="review hidden" id="pdfReview"></div>
+    <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap" class="hidden" id="pdfPlotWrap">
+      <button class="btn" id="plotPdf">Looks right — plot it</button>
+      <button class="btn ghost sm" id="clearPdf">Clear all uploads</button>
+    </div>
+    <p class="note">Tuned to the Knox CoursEval text-PDF format and its seven standard instructor items. A different school's format, a scanned (image) PDF, or a changed template won't parse — use the manual or CSV path for those. Drop more files at any time to add them to the set; matching course+term entries are de-duplicated. Always check the extracted table above before plotting.</p>
+  </section>
+
+  <!-- CHART -->
+  <section class="card hidden" id="chartCard">
+    <h2>Trends</h2>
+    <div class="controls">
+      <div class="grp"><label style="margin:0">Question</label><select id="qsel"></select></div>
+      <div class="grp"><label style="margin:0">Statistic</label>
+        <select id="statMode" title="Plot the mean of each point, or the median computed from the per-level response distribution (PDF imports only)">
+          <option value="mean">Mean</option>
+          <option value="median">Median (from response distribution)</option>
+        </select>
+      </div>
+      <div class="grp" id="ovModeGrp"><label style="margin:0">Overall =</label>
+        <select id="ovMode" title="How the 'Overall average' point is aggregated across questions (mean mode only)">
+          <option value="mean">Mean of question means</option>
+          <option value="wmean">N-weighted mean of question means</option>
+        </select>
+      </div>
+      <div class="grp"><label style="margin:0">Fit</label>
+        <select id="fitMode">
+          <option value="none">None</option>
+          <option value="per">Per series + 1σ (weighted)</option>
+          <option value="all">All visible (pooled, unweighted) + 1σ</option>
+        </select>
+      </div>
+      <label class="inline"><input type="checkbox" id="ebToggle"> Point error bars</label>
+      <button class="btn ghost sm" id="pngBtn" style="flex:0">⬇ Quick PNG</button>
+      <button class="btn sm" id="figBtn" style="flex:0">⬇ Figure PNG (matplotlib)</button>
+    </div>
+    <div class="toggles" id="toggles"></div>
+    <div id="statWarn" style="display:none;margin:6px 0 0;padding:8px 12px;border:1px solid #b4690e;border-radius:6px;background:rgba(180,105,14,.12);font-size:.78rem;color:var(--ink)">Median needs the per-level response distribution, which only comes from <strong>CoursEval PDF imports</strong>. The current data (manual or CSV) has only means, so median points can't be computed. Plotting will fall back to gaps where distribution data is missing.</div>
+    <div class="chartbox"><canvas id="chart" role="img" aria-label="Evaluation means over time by series, with optional fits and error bands."></canvas></div>
+    <div id="fitStats" class="hidden" style="margin-top:14px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:12px 14px;font-size:.8rem"></div>
+    <div id="figErr"></div>
+    <p class="note" id="chartNote"></p>
+  </section>
+</div>
+
+<script>
+"use strict";
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const X=[5,4,3,2,1];
+const PAL=['#4ea3ff','#ff5c7a','#36d98f','#ffb020','#b96bff','#ff7733','#23cccc','#bfe640','#7d8cff','#ff4dd2','#2e7d5b','#9e6b1f','#9e3f7a','#6b6be0'];
+const SHAPES=['circle','rect','triangle','rectRot','star','crossRot','rectRounded','triangle','circle','rect','rectRot','star','crossRot','triangle'];
+
+// ---------- shared state ----------
+// model: { questions:[names], series:[{name, rows:[{term, means:[], N, ses:[]|null}]}] }
+let MODEL=null;
+
+// ---------- theme ----------
+const themeBtn=document.getElementById('themeBtn');
+function setTheme(t){document.documentElement.setAttribute('data-theme',t);themeBtn.textContent=t==='dark'?'◐ Light':'◑ Dark';if(CHART)renderChart();}
+themeBtn.onclick=()=>setTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');
+
+// ---------- tabs ----------
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  ['manual','csv','pdf'].forEach(id=>document.getElementById('tab-'+id).classList.toggle('hidden',id!==t.dataset.tab));
+});
+
+// ================= MANUAL ENTRY =================
+let QNAMES=['Clarity','Engagement','Organization'];
+let NROWS=3;
+function renderQList(){
+  const box=document.getElementById('qlist');box.innerHTML='';
+  QNAMES.forEach((q,i)=>{
+    const d=document.createElement('div');d.className='qrow';
+    d.innerHTML=`<input type="text" value="${q.replace(/"/g,'&quot;')}" data-qi="${i}">`+
+      `<button class="miniico" data-del="${i}" title="Remove">×</button>`;
+    box.appendChild(d);
+  });
+  box.querySelectorAll('input').forEach(inp=>inp.oninput=e=>{QNAMES[+e.target.dataset.qi]=e.target.value;});
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=e=>{const i=+e.target.dataset.del;if(QNAMES.length>1){QNAMES.splice(i,1);renderQList();renderEntry();}});
+}
+document.getElementById('addQ').onclick=()=>{QNAMES.push('Question '+(QNAMES.length+1));renderQList();renderEntry();};
+
+function renderEntry(){
+  const t=document.getElementById('entryTable');
+  let h='<tr><th>Term</th>';
+  QNAMES.forEach(q=>h+=`<th>${esc(q)}<br><span style="font-weight:400;color:var(--ink3)">mean</span></th>`);
+  QNAMES.forEach(q=>h+=`<th>${esc(q)}<br><span style="font-weight:400;color:var(--ink3)">N</span></th>`);
+  h+='<th></th></tr>';
+  for(let r=0;r<NROWS;r++){
+    h+=`<tr><td><input type="text" data-r="${r}" data-c="term" style="min-width:80px"></td>`;
+    for(let q=0;q<QNAMES.length;q++)h+=`<td><input type="number" step="0.01" min="1" max="5" data-r="${r}" data-c="m${q}" style="width:62px"></td>`;
+    for(let q=0;q<QNAMES.length;q++)h+=`<td><input type="number" step="1" min="1" data-r="${r}" data-c="n${q}" style="width:52px"></td>`;
+    h+=`<td><button class="miniico" data-delr="${r}">×</button></td></tr>`;
+  }
+  t.innerHTML=h;
+  // restore preserved values
+  t.querySelectorAll('input').forEach(inp=>{
+    const key=inp.dataset.r+'|'+inp.dataset.c;
+    if(ENTRY[key]!=null)inp.value=ENTRY[key];
+    inp.oninput=e=>{ENTRY[e.target.dataset.r+'|'+e.target.dataset.c]=e.target.value;};
+  });
+  t.querySelectorAll('[data-delr]').forEach(b=>b.onclick=e=>{NROWS=Math.max(1,NROWS-1);renderEntry();});
+}
+let ENTRY={};
+document.getElementById('addRow').onclick=()=>{NROWS++;renderEntry();};
+
+document.getElementById('seedBtn').onclick=()=>{
+  QNAMES=['Challenged','Feedback','Prepared'];
+  NROWS=4;ENTRY={};
+  const seed=[['F22',4.6,4.2,4.7,9],['F23',4.7,4.7,4.2,9],['F24',4.3,4.3,3.8,16],['F25',4.5,4.6,4.1,12]];
+  seed.forEach((row,r)=>{ENTRY[r+'|term']=row[0];for(let q=0;q<3;q++){ENTRY[r+'|m'+q]=row[q+1];ENTRY[r+'|n'+q]=row[4];}});
+  renderQList();renderEntry();
+};
+
+document.getElementById('plotManual').onclick=()=>{
+  const qs=QNAMES.slice();
+  const rows=[];
+  for(let r=0;r<NROWS;r++){
+    const term=(ENTRY[r+'|term']||'').trim();
+    const means=[],ns=[];let any=false;
+    for(let q=0;q<qs.length;q++){
+      const m=parseFloat(ENTRY[r+'|m'+q]);const n=parseInt(ENTRY[r+'|n'+q]);
+      means.push(isNaN(m)?null:m);ns.push(isNaN(n)?null:n);
+      if(!isNaN(m))any=true;
+    }
+    if(term&&any)rows.push({term,means,N:ns});
+  }
+  if(rows.length<1)return setStatus('manualStatus','err','Add at least one term with a label and at least one mean.');
+  // build a single series called "Series 1" (manual = one instructor/one set)
+  MODEL={questions:qs, series:[{name:'Series', rows:rows.map(r=>({term:r.term,means:r.means,N:r.N,ses:null}))}]};
+  setStatus('manualStatus','ok',`Plotted ${rows.length} term${rows.length>1?'s':''} across ${qs.length} question${qs.length>1?'s':''}. Error bars use spread estimated from the mean (no per-level breakdown entered).`);
+  showChart();
+};
+
+// ================= CSV =================
+document.getElementById('plotCsv').onclick=()=>{
+  try{
+    const txt=document.getElementById('csvBox').value.trim();
+    const lines=txt.split(/\r?\n/).filter(l=>l.trim());
+    if(lines.length<2)throw new Error('Need a header row and at least one data row.');
+    const head=splitCsv(lines[0]);
+    // columns after first: pair up *_mean / *_N by prefix
+    const qmap={};const order=[];
+    head.slice(1).forEach((h,i)=>{
+      const col=i+1;const m=h.match(/^(.*?)[_\s]*(mean|avg|score)$/i);const n=h.match(/^(.*?)[_\s]*(n|count|responses?)$/i);
+      if(m){const key=m[1]||'Q';if(!qmap[key]){qmap[key]={};order.push(key);}qmap[key].mean=col;}
+      else if(n){const key=n[1]||'Q';if(!qmap[key]){qmap[key]={};order.push(key);}qmap[key].N=col;}
+      else {const key=h;if(!qmap[key]){qmap[key]={};order.push(key);}qmap[key].mean=col;}
+    });
+    const qs=order;
+    const rows=[];
+    for(let li=1;li<lines.length;li++){
+      const c=splitCsv(lines[li]);if(!c[0])continue;
+      const means=[],ns=[];
+      qs.forEach(k=>{const mc=qmap[k].mean,nc=qmap[k].N;means.push(mc!=null?parseFloat(c[mc]):null);ns.push(nc!=null?parseInt(c[nc]):null);});
+      rows.push({term:c[0],means,N:ns,ses:null});
+    }
+    MODEL={questions:qs,series:[{name:'Series',rows}]};
+    setStatus('csvStatus','ok',`Parsed ${rows.length} rows, ${qs.length} questions (${qs.join(', ')}).`);
+    showChart();
+  }catch(e){setStatus('csvStatus','err','Could not parse: '+e.message);}
+};
+function splitCsv(l){return l.split(',').map(s=>s.trim());}
+
+// ================= PDF =================
+const STD_Q=['interest','environment','challenged','feedback','clear','enthusiasm','prepared'];
+const STD_Q_LABEL=['Interest in learning','Conducive environment','Challenged with ideas','Helpful feedback','Clear explanations','Stimulated enthusiasm','Well prepared'];
+const Q_PATTERNS=[
+  /displayed an interest in my learning/i,
+  /in-class environment that was conducive/i,
+  /challenged me with new or unfamiliar/i,
+  /provided helpful feedback/i,
+  /clear explanations of important/i,
+  /stimulated my enthusiasm/i,
+  /was well prepared/i
+];
+const LIK={'strongly agree':5,'agree':4,'neutral':3,'disagree':2,'strongly disagree':1};
+
+let PDF_RESULT=null; // {questions, series:[{name,rows}]}
+const PDF_STORE={}; // key "course|term" -> row, persists across uploads
+
+const dz=document.getElementById('dropzone'),fi=document.getElementById('fileInput');
+dz.onclick=()=>fi.click();
+dz.ondragover=e=>{e.preventDefault();dz.classList.add('over');};
+dz.ondragleave=()=>dz.classList.remove('over');
+dz.ondrop=e=>{e.preventDefault();dz.classList.remove('over');handleFiles(e.dataTransfer.files);};
+fi.onchange=e=>{handleFiles(e.target.files);e.target.value='';};
+
+document.getElementById('clearPdf').onclick=()=>{
+  for(const k in PDF_STORE)delete PDF_STORE[k];
+  PDF_RESULT=null;
+  document.getElementById('pdfReview').classList.add('hidden');
+  document.getElementById('pdfPlotWrap').classList.add('hidden');
+  setStatus('pdfStatus','work','Cleared. Drop files to start a new set.');
+};
+
+async function handleFiles(files){
+  if(!files||!files.length)return;
+  setStatus('pdfStatus','work','Reading '+files.length+' file'+(files.length>1?'s':'')+'…');
+  const qset=STD_Q_LABEL.slice();
+  let added=0,updated=0;
+  try{
+    for(const f of files){
+      const buf=await f.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      const pages=[];
+      for(let p=1;p<=pdf.numPages;p++){
+        const page=await pdf.getPage(p);
+        const tc=await page.getTextContent();
+        pages.push(tc.items.map(i=>i.str).join(' ').replace(/\s+/g,' '));
+      }
+      const full=pages.join(' \n ');
+      const isIndividual=/Individual Evaluation:\s*\d+\s*out of\s*\d+/i.test(full);
+      const rows = isIndividual ? parseIndividual(pages,f.name) : parseAggregate(pages,f.name);
+      rows.forEach(r=>{
+        const key=(r.rawCourse||'?')+'|'+cleanTerm(r.term);
+        if(PDF_STORE[key])updated++;else added++;
+        PDF_STORE[key]=r;
+      });
+    }
+    const allRows=Object.values(PDF_STORE).sort((a,b)=>termRank(a.term)-termRank(b.term));
+    if(allRows.length===0)throw new Error('No recognizable CoursEval tables found. Is this a text PDF in the Knox format?');
+    PDF_RESULT={questions:qset, series:[{name:'Series', rows:allRows}]};
+    renderReview(allRows,qset);
+    const tot=allRows.length;
+    setStatus('pdfStatus','ok',`${added} new, ${updated} replaced · ${tot} term${tot>1?'s':''} total across ${countCourses(allRows)} course${countCourses(allRows)>1?'s':''}. Review below, then plot. Drop more files to keep adding.`);
+    document.getElementById('pdfPlotWrap').classList.remove('hidden');
+  }catch(e){
+    setStatus('pdfStatus','err','Parse failed: '+e.message);
+  }
+}
+function countCourses(rows){return new Set(rows.map(r=>r.rawCourse)).size;}
+
+// Aggregate report: each term block has "Course: ... " a term tag, and 7 question rows each with
+// bin % then N then Mean. We split on course headers.
+function parseAggregate(pages,fname){
+  // The course header and its evaluative table can sit on different pages, and a page can
+  // carry one course's header alongside the PREVIOUS course's table. So we walk the whole
+  // document in reading order, recording header / term-tag / table "events", and pair each
+  // table with the most recent header and term-tag seen before it.
+  function extractTable(text){
+    const means=new Array(7).fill(null),Ns=new Array(7).fill(null),ses=new Array(7).fill(null),binsArr=new Array(7).fill(null);
+    let found=0,firstPos=null;
+    Q_PATTERNS.forEach((pat,qi)=>{
+      const idx=text.search(pat);if(idx<0)return;
+      if(firstPos==null||idx<firstPos)firstPos=idx;
+      const toks=text.slice(idx,idx+260).match(/-?\d+(?:\.\d+)?%?/g);if(!toks)return;
+      const nums=toks.map(t=>parseFloat(t));
+      const bins=nums.slice(0,5),rest=nums.slice(5);
+      const Ni=rest.findIndex((v,i)=>Number.isInteger(v)&&v>=1&&v<=400&&rest[i+1]!=null&&rest[i+1]>=1&&rest[i+1]<=5);
+      if(Ni<0)return;
+      means[qi]=rest[Ni+1];Ns[qi]=rest[Ni];found++;
+      const s=bins.reduce((a,b)=>a+b,0);
+      if(s>80&&s<120){if(rest[Ni])ses[qi]=seFromBins(bins,rest[Ni]);binsArr[qi]=bins.slice();}
+    });
+    return {means,Ns,ses,bins:binsArr,found,firstPos};
+  }
+  // build ordered events
+  const events=[];
+  pages.forEach((pg,pi)=>{
+    let m;const hre=/Course:\s*PHYS\s*(\d+)/ig;
+    while((m=hre.exec(pg)))events.push({pi,pos:m.index,t:'H',v:'PHYS '+m[1]});
+    const dre=/\b(WI|SP|FA|SU)\s*20(\d{2})\b/ig;
+    while((m=dre.exec(pg)))events.push({pi,pos:m.index,t:'D',v:m[1].toUpperCase()+m[2].slice(-2)});
+    const tab=extractTable(pg);
+    if(tab.found>=4)events.push({pi,pos:tab.firstPos==null?0:tab.firstPos,t:'T',v:tab});
+  });
+  events.sort((a,b)=>a.pi-b.pi||a.pos-b.pos);
+  let curC=null,curD=null;const rows=[];
+  events.forEach(e=>{
+    if(e.t==='H')curC=e.v;
+    else if(e.t==='D')curD=e.v;
+    else if(e.t==='T'&&curC&&curD){
+      const tab=e.v;
+      rows.push({term:curD+'·'+curC.replace('PHYS ',''),rawCourse:curC,means:tab.means,N:tab.Ns,ses:tab.ses,bins:tab.bins});
+    }
+  });
+  return rows;
+}
+
+// Individual export: one page per student. Group by (course+term) inferred from header lines.
+function parseIndividual(pages,fname){
+  // header repeats: "PHYS 316 Stellar Astrophysics Section: 1 Winter 2026"
+  const groups={};
+  pages.forEach(pg=>{
+    const hdr=pg.match(/PHYS\s*(\d+\w*)[^]*?Section:\s*\d+\s*(Winter|Spring|Fall|Summer)\s*(\d{4})/i)
+            ||pg.match(/([A-Z]{3,4})\s*\d+[^]*?Section:\s*\d+\s*(Winter|Spring|Fall|Summer)\s*(\d{4})/i);
+    if(!hdr)return;
+    const season={winter:'WI',spring:'SP',fall:'FA',summer:'SU'}[hdr[2].toLowerCase()];
+    const term=season+hdr[3].slice(-2);
+    const courseNum=(pg.match(/PHYS\s*(\d+)/i)||[])[1]||hdr[1];
+    const key=courseNum+'|'+term;
+    if(!groups[key])groups[key]={term,course:courseNum,answers:Array.from({length:7},()=>[])};
+    // for each of 7 question patterns, find the answer word after the (Haurberg)-tagged line
+    Q_PATTERNS.forEach((pat,qi)=>{
+      const idx=pg.search(pat);if(idx<0)return;
+      const tail=pg.slice(idx, idx+160).toLowerCase();
+      // first likert phrase appearing
+      let best=null,bestPos=1e9;
+      for(const k in LIK){const p=tail.indexOf(k);if(p>=0&&p<bestPos){ // ensure not a longer phrase mismatch
+        bestPos=p;best=k;}}
+      // prefer "strongly agree"/"strongly disagree" over substring "agree"/"disagree"
+      if(best==='agree'&&tail.indexOf('strongly agree')>=0&&tail.indexOf('strongly agree')<=bestPos+0)best='strongly agree';
+      if(best){groups[key].answers[qi].push(LIK[best]);}
+    });
+  });
+  const rows=[];
+  Object.values(groups).forEach(g=>{
+    const means=[],Ns=[],ses=[];
+    for(let q=0;q<7;q++){
+      const a=g.answers[q];
+      if(a.length===0){means.push(null);Ns.push(null);ses.push(null);continue;}
+      const N=a.length, m=a.reduce((x,y)=>x+y,0)/N;
+      const v=a.reduce((s,x)=>s+(x-m)*(x-m),0)/N;
+      means.push(Math.round(m*100)/100);Ns.push(N);ses.push(Math.round(Math.sqrt(v)/Math.sqrt(N)*1000)/1000);
+    }
+    rows.push({term:g.term+'·'+g.course,rawCourse:'PHYS '+g.course,means,N:Ns,ses});
+  });
+  return rows;
+}
+
+function seFromBins(bins,N){
+  const s=bins.reduce((a,b)=>a+b,0);if(s<=0)return null;
+  const w=bins.map(b=>b/s);
+  const m=w.reduce((a,wi,i)=>a+wi*X[i],0);
+  const v=w.reduce((a,wi,i)=>a+wi*(X[i]-m)*(X[i]-m),0);
+  return Math.round(Math.sqrt(v)/Math.sqrt(N)*1000)/1000;
+}
+
+function termRank(t){
+  const m=String(t).match(/(WI|SP|SU|FA)\s*?(\d{2})/i);if(!m)return 0;
+  const ord={WI:0,SP:1,SU:2,FA:3}[m[1].toUpperCase()];
+  return parseInt(m[2])*10+ord;
+}
+
+function renderReview(rows,qs){
+  const box=document.getElementById('pdfReview');box.classList.remove('hidden');
+  let h='<table><tr><th>Term</th>';qs.forEach(q=>h+=`<th>${esc(q)}</th>`);h+='<th>N</th></tr>';
+  rows.forEach(r=>{
+    h+=`<tr><td>${esc(r.term)}</td>`;
+    r.means.forEach((m,i)=>{const se=r.ses&&r.ses[i]!=null?` <span style="color:var(--ink3)">±${r.ses[i].toFixed(2)}</span>`:'';h+=`<td>${m==null?'—':m.toFixed(2)+se}</td>`;});
+    const N=r.N?r.N.find(x=>x!=null):null;h+=`<td>${N==null?'—':N}</td></tr>`;
+  });
+  h+='</table>';box.innerHTML=h;
+}
+document.getElementById('plotPdf').onclick=()=>{ if(PDF_RESULT){MODEL=splitByCourse(PDF_RESULT);showChart();} };
+
+// If PDF rows carry rawCourse, split into one series per course so each gets its own line/fit.
+function splitByCourse(res){
+  const byC={};
+  res.series[0].rows.forEach(r=>{const c=r.rawCourse||'Series';(byC[c]=byC[c]||[]).push(r);});
+  const series=Object.keys(byC).map(c=>({name:c,rows:byC[c].map(r=>({term:cleanTerm(r.term),means:r.means,N:r.N,ses:r.ses,bins:r.bins}))}));
+  return {questions:res.questions, series};
+}
+function cleanTerm(t){return String(t).split('·')[0];}
+
+// ================= CHART =================
+let CHART=null;
+const hiddenSeries=new Set();
+function showChart(){
+  document.getElementById('chartCard').classList.remove('hidden');
+  // question selector
+  const qsel=document.getElementById('qsel');qsel.innerHTML='';
+  const opts=['Overall average',...MODEL.questions];
+  opts.forEach((o,i)=>{const e=document.createElement('option');e.value=i;e.textContent=o;qsel.appendChild(e);});
+  // series toggles
+  hiddenSeries.clear();
+  const tg=document.getElementById('toggles');tg.innerHTML='';
+  MODEL.series.forEach((s,i)=>{
+    const b=document.createElement('button');b.className='ctog';b.textContent=s.name;
+    b.style.borderLeftColor=PAL[i%PAL.length];b.dataset.i=i;
+    b.onclick=()=>{if(hiddenSeries.has(i))hiddenSeries.delete(i);else hiddenSeries.add(i);syncTogStyle();renderChart();};
+    tg.appendChild(b);
+  });
+  syncTogStyle();
+  syncModeVis();
+  renderChart();
+  document.getElementById('chartCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function syncTogStyle(){document.querySelectorAll('.ctog').forEach(b=>{b.style.opacity=hiddenSeries.has(+b.dataset.i)?'.4':'1';});}
+
+// universal term axis = union of all series terms, in rank order
+function allTerms(){
+  const set=new Set();MODEL.series.forEach(s=>s.rows.forEach(r=>set.add(r.term)));
+  return [...set].sort((a,b)=>termRank(a)-termRank(b));
+}
+function overallMode(){const el=document.getElementById('ovMode');return el?el.value:'mean';}
+function statMode(){const el=document.getElementById('statMode');return el?el.value:'mean';}
+function medianArr(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+// Interpolated median of a Likert item from per-level percentages.
+// bins are ordered high->low: bins[0]=% at 5, bins[4]=% at 1 (matches X=[5,4,3,2,1]).
+function binMedian(bins){
+  if(!bins)return null;
+  const tot=bins.reduce((a,b)=>a+b,0);if(tot<=0)return null;
+  // reorder to ascending levels 1..5
+  const asc=[bins[4],bins[3],bins[2],bins[1],bins[0]].map(b=>b/tot); // proportions at 1,2,3,4,5
+  const half=0.5;let cum=0;
+  for(let k=0;k<5;k++){
+    const lo=cum,hi=cum+asc[k];
+    if(half<=hi+1e-12){
+      // level value is k+1; interpolate within the bin width (1 unit, centered)
+      const within=asc[k]>0?(half-lo)/asc[k]:0.5;
+      return (k+1)-0.5+within; // lower boundary (k+0.5) + fraction
+    }
+    cum=hi;
+  }
+  return 5;
+}
+// median across questions of per-question binMedians, for the Overall option
+function rowBinMedianOverall(row){
+  if(!row.bins)return null;
+  const meds=row.bins.map(b=>binMedian(b)).filter(x=>x!=null);
+  return meds.length?medianArr(meds):null;
+}
+function meanOf(row,q){
+  const stat=statMode();
+  if(stat==='median'){
+    if(q===0)return rowBinMedianOverall(row);
+    return row.bins?binMedian(row.bins[q-1]):null;
+  }
+  // ---- mean path (default) ----
+  if(q===0){
+    const mode=overallMode();
+    const pairs=row.means.map((m,i)=>({m,n:row.N?row.N[i]:null})).filter(p=>p.m!=null);
+    if(!pairs.length)return null;
+    if(mode==='wmean'){
+      const haveAll=pairs.every(p=>p.n!=null&&p.n>0);
+      if(haveAll){const W=pairs.reduce((a,p)=>a+p.n,0);return pairs.reduce((a,p)=>a+p.m*p.n,0)/W;}
+    }
+    return pairs.reduce((a,p)=>a+p.m,0)/pairs.length;
+  }
+  return row.means[q-1];
+}
+function seOf(row,q){
+  // prefer real ses
+  if(row.ses){if(q===0){const v=row.ses.filter(x=>x!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;}if(row.ses[q-1]!=null)return Math.max(0.03,row.ses[q-1]);}
+  // fallback: spread-from-mean estimate if N present
+  const m=meanOf(row,q);const N=row.N?(q===0?row.N.find(x=>x!=null):row.N[q-1]):null;
+  if(m==null)return null;if(!N)return null;
+  const v=Math.max(0.02,0.5*(m-1)*(5-m));return Math.max(0.03,Math.sqrt(v)/Math.sqrt(N));
+}
+
+function cssvar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function hexA(hex,a){hex=hex.replace('#','');const n=parseInt(hex,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}
+
+function fit(pts,weighted){
+  let Sw=0,Sx=0,Sy=0,Sxx=0,Sxy=0;
+  pts.forEach(p=>{const w=weighted?1/(p.se*p.se):1;Sw+=w;Sx+=w*p.x;Sy+=w*p.y;Sxx+=w*p.x*p.x;Sxy+=w*p.x*p.y;});
+  const D=Sw*Sxx-Sx*Sx;if(Math.abs(D)<1e-9)return null;
+  const b=(Sw*Sxy-Sx*Sy)/D,a=(Sxx*Sy-Sx*Sxy)/D;
+  let varA,varB,covAB;
+  if(weighted){varA=Sxx/D;varB=Sw/D;covAB=-Sx/D;}
+  else{let sse=0;pts.forEach(p=>{const r=p.y-(a+b*p.x);sse+=r*r;});const s2=sse/Math.max(1,pts.length-2);varA=s2*Sxx/D;varB=s2*Sw/D;covAB=-s2*Sx/D;}
+  return {a,b,varA,varB,covAB};
+}
+
+function renderChart(){
+  const terms=allTerms();const tidx=Object.fromEntries(terms.map((t,i)=>[t,i]));
+  const q=parseInt(document.getElementById('qsel').value||0,10);
+  const fitMode=document.getElementById('fitMode').value;
+  const showEB=document.getElementById('ebToggle').checked;
+  const fitline=cssvar('--fitline'),fitcase=cssvar('--fitcase'),bandpool=cssvar('--bandpool');
+
+  const ds=[];
+  const fitStats=[]; // {name, slope, slopeSE, mean, median, n, pooled}
+  const median=arr=>{if(!arr.length)return null;const a=[...arr].sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2;};
+  const mean=arr=>arr.length?arr.reduce((p,c)=>p+c,0)/arr.length:null;
+  const pooledY=[];
+  MODEL.series.forEach((s,si)=>{
+    const col=PAL[si%PAL.length];
+    const data=terms.map(()=>null),errs=terms.map(()=>null);
+    const yvals=[];
+    s.rows.forEach(r=>{const xi=tidx[r.term];if(xi==null)return;const m=meanOf(r,q);data[xi]=m==null?null:Math.round(m*100)/100;errs[xi]=seOf(r,q);if(m!=null)yvals.push(m);});
+    if(!hiddenSeries.has(si))pooledY.push(...yvals);
+    ds.push({label:s.name,_si:si,role:'pts',order:10,data,errs,borderColor:col,backgroundColor:col,borderWidth:2,pointRadius:showEB?2:3,pointStyle:SHAPES[si%SHAPES.length],spanGaps:true,tension:.2,hidden:hiddenSeries.has(si)});
+    if(fitMode==='per'&&!hiddenSeries.has(si)){
+      const pts=[];s.rows.forEach(r=>{const xi=tidx[r.term];const m=meanOf(r,q);const se=seOf(r,q);if(xi!=null&&m!=null&&se!=null)pts.push({x:xi,y:m,se});});
+      if(pts.length>=2){const f=fit(pts,true);if(f){const xs=pts.map(p=>p.x);const L=lineOf(f,terms,Math.min(...xs),Math.max(...xs));
+        fitStats.push({name:s.name,slope:f.b,slopeSE:Math.sqrt(Math.max(0,f.varB)),mean:mean(yvals),median:median(yvals),n:yvals.length,col,pooled:false});
+        ds.push({label:s.name+' fit',_si:si,role:'fit',order:8,data:L.line,borderColor:col,backgroundColor:'transparent',borderWidth:2.5,borderDash:[6,4],pointRadius:0,spanGaps:true,tension:0,fill:false});
+        ds.push({label:'',_si:si,role:'band',order:20,data:L.up,borderColor:'transparent',backgroundColor:hexA(col,.22),pointRadius:0,spanGaps:true,fill:'+1'});
+        ds.push({label:'',_si:si,role:'band',order:20,data:L.lo,borderColor:'transparent',backgroundColor:hexA(col,.22),pointRadius:0,spanGaps:true,fill:false});
+      }}
+    }
+  });
+  if(fitMode==='all'){
+    const pts=[];MODEL.series.forEach((s,si)=>{if(hiddenSeries.has(si))return;s.rows.forEach(r=>{const xi=tidx[r.term];const m=meanOf(r,q);const se=seOf(r,q);if(xi!=null&&m!=null)pts.push({x:xi,y:m,se:se||0.2});});});
+    if(pts.length>=2){const f=fit(pts,false);if(f){const xs=pts.map(p=>p.x);const L=lineOf(f,terms,Math.min(...xs),Math.max(...xs));
+      fitStats.push({name:'Pooled fit',slope:f.b,slopeSE:Math.sqrt(Math.max(0,f.varB)),mean:mean(pooledY),median:median(pooledY),n:pooledY.length,col:cssvar('--fitline'),pooled:true});
+      ds.push({label:'',role:'band',order:30,data:L.up,borderColor:'transparent',backgroundColor:bandpool,pointRadius:0,spanGaps:true,fill:'+1'});
+      ds.push({label:'',role:'band',order:30,data:L.lo,borderColor:'transparent',backgroundColor:bandpool,pointRadius:0,spanGaps:true,fill:false});
+      ds.push({label:'pooled casing',role:'case',order:1,data:L.line,borderColor:fitcase,backgroundColor:'transparent',borderWidth:6,pointRadius:0,spanGaps:true,tension:0,fill:false});
+      ds.push({label:'Pooled fit',role:'poolfit',order:0,data:L.line,borderColor:fitline,backgroundColor:'transparent',borderWidth:3,pointRadius:0,spanGaps:true,tension:0,fill:false});
+    }}
+  }
+
+  if(CHART)CHART.destroy();
+  const ctx=document.getElementById('chart');
+  CHART=new Chart(ctx,{type:'line',data:{labels:terms,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:'nearest',intersect:false},
+      scales:{
+        y:{min:Math.max(1,yMin()),max:5,title:{display:true,text:'Mean score (1–5)',color:cssvar('--axis')},ticks:{color:cssvar('--axis')},grid:{display:false}},
+        x:{ticks:{color:cssvar('--axis'),autoSkip:false,maxRotation:60,minRotation:60,font:{size:10}},grid:{display:false}}
+      },
+      plugins:{legend:{display:false},
+        tooltip:{filter:it=>CHART.data.datasets[it.datasetIndex].role==='pts',
+          callbacks:{label:c=>{const d=CHART.data.datasets[c.datasetIndex];const e=d.errs?d.errs[c.dataIndex]:null;return `${d.label}: ${c.parsed.y.toFixed(2)}`+(e!=null?` ± ${e.toFixed(2)}`:'');}}}}},
+    plugins:[errBarsPlugin]});
+
+  const fsBox=document.getElementById('fitStats');
+  if(fitStats.length){
+    const rows=fitStats.map(f=>{
+      const sl=f.slope, se=f.slopeSE;
+      const sig=se>0?Math.abs(sl/se):0;
+      const swatch=`<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${f.col};margin-right:7px;vertical-align:middle"></span>`;
+      return `<div style="display:flex;gap:14px;align-items:center;margin:3px 0;flex-wrap:wrap">`+
+        `<span style="min-width:150px;${f.pooled?'font-weight:600':''}">${swatch}${esc(f.name)}</span>`+
+        `<span>slope = <strong>${sl>=0?'+':''}${sl.toFixed(4)}</strong> <span style="color:var(--ink2)">± ${se.toFixed(4)}</span> <span style="color:var(--ink3)">/term</span></span>`+
+        `<span style="color:var(--ink2)">${sig.toFixed(1)}σ from flat</span>`+
+        `<span style="color:var(--ink2)">mean <strong style="color:var(--ink)">${f.mean!=null?f.mean.toFixed(2):'–'}</strong></span>`+
+        `<span style="color:var(--ink2)">median <strong style="color:var(--ink)">${f.median!=null?f.median.toFixed(2):'–'}</strong></span>`+
+        `<span style="color:var(--ink3)">n=${f.n}</span>`+
+        `</div>`;
+    }).join('');
+    fsBox.innerHTML=`<div style="color:var(--ink2);text-transform:uppercase;letter-spacing:.1em;font-size:.7rem;margin-bottom:8px">Fit slope ± 1σ · mean · median</div>${rows}`+
+      `<div style="color:var(--ink3);font-size:.7rem;margin-top:8px">Slope is change in mean score per x-step (term index). σ is the standard error on the slope. Mean and median summarize the plotted points themselves (each term's mean score), not the slope.</div>`;
+    fsBox.classList.remove('hidden');
+  } else {
+    fsBox.classList.add('hidden');fsBox.innerHTML='';
+  }
+
+  document.getElementById('chartNote').innerHTML=
+    'Per-series fits are weighted least squares (1/SE²). Pooled fit is unweighted OLS so unanimous terms don\'t dominate. '+
+    'SE uses the real response distribution when available (PDF imports); otherwise it\'s estimated from the mean and N. '+
+    'Small-N terms carry large, uncertain error bars — read trends, not single points.<br>'+
+    '<strong>Quick PNG</strong> exports the on-screen chart instantly. <strong>Figure PNG (matplotlib)</strong> renders a clean, '+
+    'publication-style figure with real Python in your browser — the first use downloads the runtime (~10 MB), then it\'s fast.';
+}
+function yMin(){ // a little headroom below the lowest visible point
+  let lo=5;MODEL.series.forEach((s,si)=>{if(hiddenSeries.has(si))return;s.rows.forEach(r=>r.means.forEach(m=>{if(m!=null)lo=Math.min(lo,m);}));});
+  return Math.max(1,Math.floor((lo-0.3)*10)/10);
+}
+function lineOf(f,terms,xmin,xmax){
+  const line=[],up=[],lo=[];
+  terms.forEach((t,xi)=>{if(xi<xmin||xi>xmax){line.push(null);up.push(null);lo.push(null);return;}
+    const y=f.a+f.b*xi;const se=Math.sqrt(Math.max(0,f.varA+xi*xi*f.varB+2*xi*f.covAB));
+    line.push(Math.round(y*1000)/1000);up.push(Math.round((y+se)*1000)/1000);lo.push(Math.round((y-se)*1000)/1000);});
+  return {line,up,lo};
+}
+const errBarsPlugin={id:'eb',afterDatasetsDraw(c){
+  if(!document.getElementById('ebToggle').checked)return;const{ctx,scales:{x,y}}=c;
+  c.data.datasets.forEach((d,di)=>{if(d.role!=='pts'||!c.isDatasetVisible(di))return;
+    ctx.save();ctx.strokeStyle=d.borderColor;ctx.lineWidth=1;
+    d.data.forEach((v,xi)=>{if(v==null||!d.errs[xi])return;
+      const px=x.getPixelForValue(xi),pu=y.getPixelForValue(Math.min(5,v+d.errs[xi])),pl=y.getPixelForValue(Math.max(1,v-d.errs[xi]));
+      ctx.beginPath();ctx.moveTo(px,pu);ctx.lineTo(px,pl);ctx.moveTo(px-3,pu);ctx.lineTo(px+3,pu);ctx.moveTo(px-3,pl);ctx.lineTo(px+3,pl);ctx.stroke();});
+    ctx.restore();});
+}};
+
+document.getElementById('qsel').onchange=()=>{syncModeVis();renderChart();};
+document.getElementById('ovMode').onchange=renderChart;
+document.getElementById('statMode').onchange=()=>{syncModeVis();renderChart();};
+function dataHasBins(){return MODEL&&MODEL.series.some(s=>s.rows.some(r=>r.bins&&r.bins.some(b=>b)));}
+function syncModeVis(){
+  const q=parseInt(document.getElementById('qsel').value||0,10);
+  const isMedian=statMode()==='median';
+  const og=document.getElementById('ovModeGrp');
+  if(og)og.style.display=(q===0&&!isMedian)?'':'none'; // overall-agg only meaningful for mean path
+  const warn=document.getElementById('statWarn');
+  if(warn)warn.style.display=(isMedian&&!dataHasBins())?'':'none';
+}
+document.getElementById('fitMode').onchange=renderChart;
+document.getElementById('ebToggle').onchange=renderChart;
+document.getElementById('pngBtn').onclick=()=>{
+  const src=document.getElementById('chart');const tmp=document.createElement('canvas');tmp.width=src.width;tmp.height=src.height;
+  const c=tmp.getContext('2d');c.fillStyle=cssvar('--bg')||'#fff';c.fillRect(0,0,tmp.width,tmp.height);c.drawImage(src,0,0);
+  const a=document.createElement('a');const ql=document.getElementById('qsel').selectedOptions[0].textContent.replace(/[^a-z0-9]+/gi,'_');
+  a.download='eval_trends_'+ql+'.png';a.href=tmp.toDataURL('image/png');a.click();
+};
+
+// ---------- matplotlib (Pyodide) figure export ----------
+let PYODIDE=null, PYLOADING=false;
+const MPL_CODE=`
+import json, io, base64
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+def render(payload_json):
+    P=json.loads(payload_json)
+    terms=P['terms']; series=P['series']; qlabel=P['qlabel']
+    fitmode=P['fitmode']; show_eb=P['show_eb']; dark=P['dark']
+    fg = '#e6edf3' if dark else '#1c1f24'
+    bg = '#0e1116' if dark else '#ffffff'
+    grid = (1,1,1,0.08) if dark else (0,0,0,0.08)
+    palette = ['#1f6fb2','#d11e3a','#1d9e75','#c98a00','#7d3fb0','#e8731c','#178a8a','#5a8f1f','#3a45b0','#b02f8a','#0e5c3a','#8a5a10','#7a2e5c','#2e7d7d']
+    plt.rcParams.update({'font.family':'serif','mathtext.fontset':'dejavuserif',
+        'axes.edgecolor':fg,'axes.labelcolor':fg,'text.color':fg,
+        'xtick.color':fg,'ytick.color':fg,'axes.linewidth':0.8})
+    fig,ax=plt.subplots(figsize=(9,5.2))
+    fig.patch.set_facecolor(bg); ax.set_facecolor(bg)
+
+    def wfit(x,y,w):
+        x=np.array(x,float);y=np.array(y,float);w=np.array(w,float)
+        Sw=w.sum();Sx=(w*x).sum();Sy=(w*y).sum();Sxx=(w*x*x).sum();Sxy=(w*x*y).sum()
+        D=Sw*Sxx-Sx*Sx
+        b=(Sw*Sxy-Sx*Sy)/D;a=(Sxx*Sy-Sx*Sxy)/D
+        return a,b,D,Sw,Sx,Sxx
+
+    lo_all=5.0
+    fit_lines=[]
+    for i,s in enumerate(series):
+        c=palette[i%len(palette)]
+        x=np.array(s['x'],float);y=np.array(s['y'],float);se=np.array(s['se'],float)
+        if len(y): lo_all=min(lo_all,float(np.min(y)))
+        if show_eb:
+            ax.errorbar(x,y,yerr=se,fmt='none',ecolor=c,elinewidth=0.8,capsize=2,alpha=0.7,zorder=2)
+        ax.plot(x,y,'-',color=c,lw=1.2,marker=['o','s','^','D','*','x','P','v','o','s','^','D','*','x'][i%14],ms=4,label=s['name'],zorder=3)
+        if fitmode=='per' and len(x)>=2:
+            w=1/np.maximum(se,0.03)**2
+            a,b,D,Sw,Sx,Sxx=wfit(x,y,w)
+            xx=np.linspace(x.min(),x.max(),60);yy=a+b*xx
+            seL=np.sqrt(np.maximum(0,Sxx/D+xx*xx*Sw/D+2*xx*(-Sx/D)))
+            ax.plot(xx,yy,'--',color=c,lw=1.0,zorder=2)
+            ax.fill_between(xx,yy-seL,yy+seL,color=c,alpha=0.12,lw=0,zorder=1)
+            sb=np.sqrt(max(0.0,Sw/D))  # SE on slope (weighted)
+            fit_lines.append((c,r'%s: slope %+.4f $\\pm$ %.4f  |  mean %.2f  med %.2f'%(s['name'],b,sb,float(np.mean(y)),float(np.median(y)))))
+
+    if fitmode=='all':
+        px=[];py=[]
+        for s in series: px+=list(s['x']);py+=list(s['y'])
+        if len(px)>=2:
+            px=np.array(px,float);py=np.array(py,float)
+            b,a=np.polyfit(px,py,1)  # polyfit returns highest-power first: [slope, intercept]
+            xx=np.linspace(px.min(),px.max(),60);yy=a+b*xx
+            n=len(px);xbar=px.mean();resid=py-(a+b*px)
+            s2=(resid**2).sum()/max(1,n-2);Sxx=((px-xbar)**2).sum()
+            seL=np.sqrt(s2*(1.0/n+(xx-xbar)**2/Sxx))
+            ax.fill_between(xx,yy-seL,yy+seL,color='#888780',alpha=0.30,lw=0,zorder=4)
+            ax.plot(xx,yy,'-',color=fg,lw=2.6,zorder=5)
+            ax.plot(xx,yy,'-',color=('#ffffff' if dark else '#11151a'),lw=1.6,zorder=6)
+            sb=np.sqrt(s2/Sxx) if Sxx>0 else float('nan')  # SE on slope (pooled OLS)
+            fit_lines.append((fg,r'Pooled: slope %+.4f $\\pm$ %.4f  |  mean %.2f  med %.2f'%(b,sb,float(np.mean(py)),float(np.median(py)))))
+
+    # slope readout box
+    if fit_lines:
+        txt='\\n'.join(t for _,t in fit_lines)
+        ax.text(0.015,0.03,txt,transform=ax.transAxes,fontsize=8.5,va='bottom',ha='left',
+                family='serif',
+                bbox=dict(boxstyle='round,pad=0.45',fc=bg,ec=fg,alpha=0.85,lw=0.7))
+
+    ax.set_ylim(max(1.0,min(3.0,lo_all-0.3)),5.03)
+    ax.set_xticks(range(len(terms)))
+    ax.set_xticklabels(terms,rotation=55,ha='right',fontsize=8)
+    ax.set_ylabel(('Median' if P.get('ystat')=='median' else 'Mean')+' score (1–5)',fontsize=10)
+    ax.set_title(qlabel,fontsize=12,loc='left',pad=10)
+    ax.grid(False)
+    for sp in ['top','right']: ax.spines[sp].set_visible(False)
+    if len(series)>1:
+        ax.legend(frameon=False,fontsize=8,loc='lower right',ncol=min(4,len(series)))
+    fig.tight_layout()
+    buf=io.BytesIO();fig.savefig(buf,format='png',dpi=200,facecolor=bg,bbox_inches='tight')
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode('ascii')
+`;
+
+function buildPayload(){
+  const terms=allTerms();const tidx=Object.fromEntries(terms.map((t,i)=>[t,i]));
+  const q=parseInt(document.getElementById('qsel').value||0,10);
+  const series=[];
+  MODEL.series.forEach((s,si)=>{
+    if(hiddenSeries.has(si))return;
+    const x=[],y=[],se=[];
+    s.rows.forEach(r=>{const xi=tidx[r.term];const m=meanOf(r,q);if(xi==null||m==null)return;x.push(xi);y.push(Math.round(m*100)/100);const e=seOf(r,q);se.push(e==null?0.05:e);});
+    if(x.length)series.push({name:s.name,x,y,se});
+  });
+  let qlabel=document.getElementById('qsel').selectedOptions[0].textContent;
+  const isMed=statMode()==='median';
+  if(q===0){
+    if(isMed){qlabel='Overall (median of per-question medians)';}
+    else{const mm={mean:'mean of question means',wmean:'N-weighted mean of question means'};qlabel='Overall ('+mm[overallMode()]+')';}
+  } else if(isMed){ qlabel=qlabel+' — median'; }
+  return {terms,series,qlabel,ystat:(isMed?'median':'mean'),
+    fitmode:document.getElementById('fitMode').value,show_eb:document.getElementById('ebToggle').checked,
+    dark:document.documentElement.getAttribute('data-theme')==='dark'};
+}
+
+document.getElementById('figBtn').onclick=async()=>{
+  if(!MODEL)return;
+  const btn=document.getElementById('figBtn');const orig=btn.textContent;
+  try{
+    if(typeof loadPyodide!=='function')throw new Error('Pyodide runtime did not load — the CDN script (cdn.jsdelivr.net) may be blocked by your network or an extension.');
+    if(!PYODIDE){
+      if(PYLOADING)throw new Error('Still loading Python — give it a moment and try again.');
+      PYLOADING=true;
+      btn.textContent='Loading Python…';btn.disabled=true;
+      PYODIDE=await loadPyodide();
+      btn.textContent='Loading matplotlib…';
+      await PYODIDE.loadPackage(['numpy','matplotlib']);
+      PYODIDE.runPython(MPL_CODE);
+      PYLOADING=false;
+    }
+    btn.textContent='Rendering…';btn.disabled=true;
+    const payload=buildPayload();
+    if(payload.series.length===0)throw new Error('No visible data to plot — check that at least one series is toggled on and the selected question has values.');
+    const render=PYODIDE.globals.get('render');
+    let b64;
+    try{ b64=render(JSON.stringify(payload)); }
+    finally{ render&&render.destroy&&render.destroy(); }
+    const a=document.createElement('a');
+    a.download='eval_figure_'+payload.qlabel.replace(/[^a-z0-9]+/gi,'_')+'.png';
+    a.href='data:image/png;base64,'+b64;a.click();
+    btn.textContent='✓ Saved';setTimeout(()=>{btn.textContent=orig;},1600);
+  }catch(e){
+    console.error(e);
+    const msg=(e&&e.message?e.message:String(e)).split('\n').slice(-3).join(' ').slice(0,300);
+    setStatus('figErr','err','Figure export failed: '+msg);
+    btn.textContent='✗ Failed';setTimeout(()=>{btn.textContent=orig;},2600);
+  }finally{btn.disabled=false;PYLOADING=false;}
+};
+
+// ---------- util ----------
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function setStatus(id,kind,msg){const e=document.getElementById(id);e.className='status '+kind;e.textContent=msg;}
+
+// init
+renderQList();renderEntry();
+</script>
+</body>
+</html>
